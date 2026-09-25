@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Perhitungan Suara Real-time</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary-blue': '#004aad',
+                        'light-blue': '#e6f0fa',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #004aad 0%, #002b66 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            color: #004aad;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+        }
+
+        /* Animation for vote changes */
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); color: #00bfff; }
+            100% { transform: scale(1); }
+        }
+
+        .animate-pop {
+            animation: pop 0.4s ease-out;
+        }
+
+        /* Mobile specific adjustments */
+        .mobile-btn {
+            touch-action: manipulation; /* Improves touch responsiveness */
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center relative">
+
+    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2"></div>
+
+    <div id="login-screen" class="w-full max-w-md p-8 glass-panel rounded-3xl text-center mx-4 mt-20 md:mt-0 transition-all duration-500">
+        <div class="mb-6">
+            <svg class="w-16 h-16 mx-auto text-white mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path></svg>
+            <h1 class="text-3xl font-bold mb-2">Sistem Pemilu</h1>
+            <p class="text-sm text-blue-200">Masukkan kode unik yang sama di HP dan Laptop Anda untuk saling terhubung.</p>
+        </div>
+        <div class="space-y-4">
+            <input type="text" id="room-code-input" placeholder="Contoh: PASLON2026" class="w-full px-5 py-4 rounded-xl text-primary-blue font-bold text-center text-xl uppercase focus:outline-none focus:ring-4 focus:ring-blue-300 shadow-inner">
+            <button id="join-btn" class="w-full bg-white text-primary-blue font-bold py-4 rounded-xl shadow-lg hover:bg-light-blue active:scale-95 transition-all text-lg">
+                Mulai Sinkronisasi
+            </button>
+        </div>
+    </div>
+
+    <div id="main-app" class="w-full min-h-screen hidden flex-col">
+        
+        <!-- Header -->
+        <header class="glass-panel w-full py-4 px-6 flex justify-between items-center z-10 sticky top-0">
+            <div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide">Live Count Pilkada</h1>
+                <p id="room-display" class="text-xs md:text-sm text-blue-200 font-mono"></p>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="device-mode-badge" class="px-3 py-1 bg-white/20 rounded-full text-xs font-semibold backdrop-blur-md">
+                    Mendeteksi perangkat...
+                </span>
+                <button id="logout-btn" class="text-sm font-semibold hover:text-blue-200 transition-colors">
+                    Keluar
+                </button>
+            </div>
+        </header>
+
+        <main id="desktop-view" class="hidden md:flex flex-1 p-8 items-center justify-center gap-8 lg:gap-12 w-full max-w-7xl mx-auto">
+            <!-- Cards will be injected here by JS -->
+        </main>
+
+        <main id="mobile-view" class="flex md:hidden flex-1 flex-col p-4 space-y-4 pb-20 w-full max-w-md mx-auto">
+            <!-- Controller Cards will be injected here by JS -->
+        </main>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Environment Variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'live-vote-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // Mock config to prevent crash if running outside environment
+            apiKey: "mock", authDomain: "mock", projectId: "mock" 
+        };
+
+        let app, db, auth, userId;
+        let currentRoom = null;
+        let unsubscribeSnapshot = null;
+
+        // Paslon Data Definition
+        const paslonData = [
+            { id: '1', name: 'Budi & Citra', img: 'https://placehold.co/400x400/004aad/ffffff?text=Paslon+1' },
+            { id: '2', name: 'Dimas & Eka', img: 'https://placehold.co/400x400/004aad/ffffff?text=Paslon+2' },
+            { id: '3', name: 'Fajar & Gita', img: 'https://placehold.co/400x400/004aad/ffffff?text=Paslon+3' }
+        ];
+        
+        let currentVotes = { '1': 0, '2': 0, '3': 0 };
+
+        function showToast(message, isError = false) {
+            const toast = document.createElement('div');
+            toast.className = `px-6 py-3 rounded-full text-sm font-semibold shadow-xl transform transition-all duration-500 translate-y-[-100%] opacity-0 ${isError ? 'bg-red-500 text-white' : 'bg-white text-primary-blue'}`;
+            toast.textContent = message;
+            
+            document.getElementById('toast-container').appendChild(toast);
+            
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove('translate-y-[-100%]', 'opacity-0');
+            }, 10);
+
+            // Remove after 3s
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-100%]', 'opacity-0');
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
+
+        async function initApp() {
+            try {
+                if(firebaseConfig.apiKey === "mock") {
+                    showToast("Menjalankan mode simulasi (Firebase Config tidak ditemukan).", true);
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // MANDATORY: Auth before any Firestore operation
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                userId = auth.currentUser.uid;
+                
+                // Bind UI events after auth is ready
+                document.getElementById('join-btn').addEventListener('click', handleJoinRoom);
+                document.getElementById('logout-btn').addEventListener('click', handleLogout);
+                
+                // Format input to uppercase
+                const roomInput = document.getElementById('room-code-input');
+                roomInput.addEventListener('input', (e) => {
+                    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                });
+
+                // Check screen size to set labels
+                updateDeviceModeLabel();
+                window.addEventListener('resize', updateDeviceModeLabel);
+
+            } catch (error) {
+                console.error("Auth Error:", error);
+                showToast("Gagal terhubung ke sistem otentikasi.", true);
+            }
+        }
+
+        function updateDeviceModeLabel() {
+            const badge = document.getElementById('device-mode-badge');
+            if (window.innerWidth >= 768) {
+                badge.textContent = "💻 Mode Tampilan Utama";
+                badge.className = "px-3 py-1 bg-green-500/20 text-green-100 rounded-full text-xs font-semibold backdrop-blur-md border border-green-400/30";
+            } else {
+                badge.textContent = "📱 Mode Remote Control";
+                badge.className = "px-3 py-1 bg-orange-500/20 text-orange-100 rounded-full text-xs font-semibold backdrop-blur-md border border-orange-400/30";
+            }
+        }
+
+        async function handleJoinRoom() {
+            const code = document.getElementById('room-code-input').value.trim();
+            if (!code || code.length < 3) {
+                showToast("Kode harus minimal 3 karakter!", true);
+                return;
+            }
+
+            if (!userId) {
+                showToast("Sistem belum siap, tunggu sebentar.", true);
+                return;
+            }
+
+            currentRoom = code;
+            document.getElementById('room-display').textContent = `Kode Ruangan: ${currentRoom}`;
+            
+            // Switch UI
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            document.getElementById('main-app').classList.add('flex');
+
+            renderUI(); // Render structure immediately
+            
+            // Setup Firestore Listener
+            // STRICT RULE 1: Use specific public data path for shared rooms
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', `election_room_${currentRoom}`);
+
+            // MANDATORY RULE: error callback in onSnapshot
+            unsubscribeSnapshot = onSnapshot(docRef, 
+                (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        updateVotesUI(data);
+                    } else {
+                        // Document doesn't exist, initialize it
+                        setDoc(docRef, { '1': 0, '2': 0, '3': 0 })
+                            .catch(err => console.error("Error init doc:", err));
+                    }
+                }, 
+                (error) => {
+                    console.error("Firebase sync error:", error);
+                    showToast("Gagal sinkronisasi data.", true);
+                }
+            );
+        }
+
+        function handleLogout() {
+            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            currentRoom = null;
+            
+            document.getElementById('main-app').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('flex');
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('room-code-input').value = '';
+        }
+
+        async function modifyVote(paslonId, delta) {
+            if (!currentRoom || !userId) return;
+            
+            // Optimistic UI Update for feeling of instant response
+            const newTotal = Math.max(0, (currentVotes[paslonId] || 0) + delta);
+            currentVotes[paslonId] = newTotal;
+            updateVotesUI(currentVotes); 
+
+            // Firestore Update
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', `election_room_${currentRoom}`);
+            try {
+                // Using setDoc with merge to ensure it works even if we missed the init
+                await setDoc(docRef, { [paslonId]: newTotal }, { merge: true });
+            } catch (error) {
+                console.error("Error updating vote:", error);
+                showToast("Gagal menyimpan suara!", true);
+            }
+        }
+
+        function renderUI() {
+            const desktopContainer = document.getElementById('desktop-view');
+            const mobileContainer = document.getElementById('mobile-view');
+            
+            desktopContainer.innerHTML = '';
+            mobileContainer.innerHTML = '';
+
+            paslonData.forEach(paslon => {
+                // 1. Build Desktop Card (Display Focus)
+                const desktopCard = document.createElement('div');
+                desktopCard.className = "glass-card p-6 flex flex-col items-center flex-1 max-w-sm w-full";
+                desktopCard.innerHTML = `
+                    <div class="w-32 h-32 md:w-48 md:h-48 rounded-full overflow-hidden border-4 border-primary-blue mb-6 shadow-lg">
+                        <img src="${paslon.img}" alt="${paslon.name}" class="w-full h-full object-cover">
+                    </div>
+                    <div class="bg-primary-blue text-white px-4 py-1 rounded-full text-sm font-bold mb-2">Nomor Urut ${paslon.id}</div>
+                    <h2 class="text-2xl font-extrabold text-center mb-6">${paslon.name}</h2>
+                    <div class="bg-light-blue w-full rounded-2xl p-6 text-center shadow-inner">
+                        <span class="block text-sm text-primary-blue font-bold uppercase tracking-wider mb-2">Total Suara</span>
+                        <div id="desktop-vote-${paslon.id}" class="text-6xl lg:text-7xl font-black text-primary-blue transition-all duration-200">
+                            0
+                        </div>
+                    </div>
+                `;
+                desktopContainer.appendChild(desktopCard);
+
+                // 2. Build Mobile Card (Controller Focus)
+                const mobileCard = document.createElement('div');
+                mobileCard.className = "glass-card p-4 flex items-center justify-between w-full shadow-lg";
+                mobileCard.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 rounded-full overflow-hidden border-2 border-primary-blue flex-shrink-0">
+                            <img src="${paslon.img}" alt="${paslon.name}" class="w-full h-full object-cover">
+                        </div>
+                        <div>
+                            <div class="text-xs font-bold text-gray-500 uppercase">Paslon ${paslon.id}</div>
+                            <h3 class="font-bold text-lg leading-tight text-primary-blue">${paslon.name}</h3>
+                            <div class="flex items-baseline gap-1 mt-1">
+                                <span id="mobile-vote-${paslon.id}" class="text-2xl font-black text-primary-blue transition-all">0</span>
+                                <span class="text-xs text-gray-500 font-semibold">Suara</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <button onclick="window.modifyVote('${paslon.id}', 1)" class="mobile-btn bg-primary-blue text-white w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold shadow-md active:bg-blue-800 active:scale-95 transition-all">
+                            +
+                        </button>
+                        <button onclick="window.modifyVote('${paslon.id}', -1)" class="mobile-btn bg-red-100 text-red-600 w-12 h-10 rounded-xl flex items-center justify-center text-2xl font-bold shadow-sm active:bg-red-200 active:scale-95 transition-all">
+                            -
+                        </button>
+                    </div>
+                `;
+                mobileContainer.appendChild(mobileCard);
+            });
+        }
+
+        function updateVotesUI(data) {
+            currentVotes = { ...currentVotes, ...data };
+            
+            paslonData.forEach(paslon => {
+                const newVote = currentVotes[paslon.id] || 0;
+                
+                // Update Desktop View
+                const desktopElement = document.getElementById(`desktop-vote-${paslon.id}`);
+                if (desktopElement && desktopElement.innerText !== newVote.toString()) {
+                    desktopElement.innerText = newVote;
+                    
+                    // Trigger animation
+                    desktopElement.classList.remove('animate-pop');
+                    void desktopElement.offsetWidth; // trigger reflow
+                    desktopElement.classList.add('animate-pop');
+                }
+
+                // Update Mobile View
+                const mobileElement = document.getElementById(`mobile-vote-${paslon.id}`);
+                if (mobileElement && mobileElement.innerText !== newVote.toString()) {
+                    mobileElement.innerText = newVote;
+                    
+                    mobileElement.classList.remove('animate-pop');
+                    void mobileElement.offsetWidth; 
+                    mobileElement.classList.add('animate-pop');
+                }
+            });
+        }
+
+        // Make modifyVote available to inline click handlers
+        window.modifyVote = modifyVote;
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
