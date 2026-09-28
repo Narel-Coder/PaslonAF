@@ -72,29 +72,38 @@
         import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, updateDoc, collection, onSnapshot, getDocs, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Konfigurasi Firebase dari Environment Platform
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'pemilos-app-default';
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjB3g669HGbBdo3_PtBPRIHgQyWMcAYd4",
+            authDomain: "pemilos-af.firebaseapp.com",
+            projectId: "pemilos-af",
+            storageBucket: "pemilos-af.firebasestorage.app",
+            messagingSenderId: "253057739083",
+            appId: "1:253057739083:web:06038786e51065cc4720ce"
+        };
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Path ke koleksi data publik
-        const candidatesCollectionPath = `artifacts/${appId}/public/data/candidates`;
+        // Path ke koleksi data di Firestore Anda
+        const candidatesCollectionPath = "candidates";
 
         async function initAuth() {
             try {
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // Langsung login tanpa nama (Anonymous)
+                await signInAnonymously(auth);
                 console.log("Autentikasi berhasil!");
                 initDataAndListen();
             } catch (error) {
                 console.error("Gagal autentikasi:", error);
-                alert("Gagal terhubung ke sistem. Pastikan koneksi internet stabil.");
+                // Jika error, ubah tampilan loading menjadi pesan error
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm">
+                        <p class="text-red-500 font-bold text-lg mb-2">Gagal Terhubung ⚠️</p>
+                        <p class="text-slate-600 text-sm">Pastikan fitur "Authentication > Anonymous" di Firebase sudah Anda aktifkan (Enable).</p>
+                    </div>
+                `;
             }
         }
 
