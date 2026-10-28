@@ -11,16 +11,18 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            /* Latar belakang biru muda ke putih */
-            background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+            /* Latar belakang diperbarui dengan gambar baru Anda */
+            background-image: url('Untitled design (2).jpg');
+            background-repeat: no-repeat;
+            background-size: cover; /* Membuat gambar otomatis menyesuaikan dan menutupi layar */
+            background-position: center;
+            background-attachment: fixed;
             min-height: 100vh;
         }
         
         .glass-card {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(191, 219, 254, 0.5); /* blue-200 */
-            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.1), 0 8px 10px -6px rgba(59, 130, 246, 0.1);
+            background: rgba(157, 226, 255, 0.95); /* Sedikit lebih solid agar teks tetap terbaca jelas */
+            backdrop-filter: blur(12px);
         }
 
         .number-transition {
@@ -49,20 +51,17 @@
         <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mb-4"></div>
         <p class="text-blue-800 font-semibold text-lg animate-pulse">Menghubungkan ke Server Real-time...</p>
     </div>
-
-    <div id="app-content" class="w-full max-w-6xl mx-auto hidden flex-col items-center">
+    <div id="app-content" class="w-full max-w-7xl mx-auto hidden flex-col items-center">
         
         <!-- Header -->
-        <header class="text-center mb-12 w-full">
-            <div class="inline-block px-4 py-1 rounded-full bg-blue-100 text-blue-700 font-semibold text-sm mb-4 tracking-wider uppercase">
-                Sistem Sinkronisasi Aktif
-            </div>
-            <h1 class="text-4xl md:text-5xl font-extrabold text-blue-900 tracking-tight mb-2">
-                PEMILOS AF <span class="text-blue-500">26/27</span>
+        <header class="text-center mb-12 w-full flex flex-col items-center justify-center mt-6">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-blue-900 tracking-tight mb-2 bg-white/95 inline-block px-8 py-5 rounded-3xl shadow-xl backdrop-blur-md border-4 border-white">
+                PEMILU OSIS SMP AL-FATH BSD <span class="text-blue-600">2026</span>
             </h1>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full" id="candidates-container">
+        <!-- Grid diubah menjadi 4 kolom untuk PC (lg:grid-cols-4) dan 2 kolom untuk tablet -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full" id="candidates-container">
             <!-- Kartu Paslon akan dirender di sini oleh JavaScript -->
         </div>
     </div>
@@ -88,51 +87,66 @@
         // Path ke koleksi data di Firestore Anda
         const candidatesCollectionPath = "candidates";
 
+        // =========================================================================
+        // PENGATURAN DATA PASLON (GANTI LINK GAMBAR DI SINI)
+        // =========================================================================
+        // Anda bisa mengganti tulisan URL 'https://...' di bagian 'image' dengan 
+        // link foto asli paslon (bisa upload foto ke imgur, discord, atau postimage).
+        const defaultPaslons = [
+            { id: 'paslon1', name: 'Azkia & Cumbita', order: 1, image: 'AzkiaCumbita.jpg' },
+            { id: 'paslon2', name: 'Ayla & Naisya', order: 2, image: 'AylaNaisya.jpg' },
+            { id: 'paslon3', name: 'Athaya & Syathir', order: 3, image: 'AthayaSyathir.jpg' },
+            { id: 'paslon4', name: 'Fakhirah & Makaio', order: 4, image: 'FakhirahMakaio.jpg' }
+        ];
+
         async function initAuth() {
             try {
-                // Langsung login tanpa nama (Anonymous)
-                await signInAnonymously(auth);
+                // Langsung login tanpa nama (Anonymous) dengan batasan waktu (timeout) 10 detik
+                const authPromise = signInAnonymously(auth);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Koneksi timeout. Cek internet Anda.")), 10000)
+                );
+                
+                await Promise.race([authPromise, timeoutPromise]);
                 console.log("Autentikasi berhasil!");
                 initDataAndListen();
             } catch (error) {
                 console.error("Gagal autentikasi:", error);
-                // Jika error, ubah tampilan loading menjadi pesan error
                 const loadingScreen = document.getElementById('loading-screen');
                 loadingScreen.innerHTML = `
-                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm">
+                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm m-4">
                         <p class="text-red-500 font-bold text-lg mb-2">Gagal Terhubung ⚠️</p>
-                        <p class="text-slate-600 text-sm">Pastikan fitur "Authentication > Anonymous" di Firebase sudah Anda aktifkan (Enable).</p>
+                        <p class="text-slate-600 text-sm mb-4">Pastikan fitur "Authentication > Anonymous" di Firebase sudah Anda aktifkan.</p>
+                        <code class="text-xs text-red-400 bg-red-50 p-2 rounded block text-left overflow-auto">${error.message}</code>
                     </div>
                 `;
             }
         }
 
-        async function initDataAndListen() {
+        function initDataAndListen() {
             const colRef = collection(db, candidatesCollectionPath);
             
-            try {
-                // Cek apakah data sudah ada
-                const snapshot = await getDocs(colRef);
-                if (snapshot.empty) {
-                    console.log("Data kosong, membuat paslon awal...");
-                    // Bikin 3 paslon default dengan format Nama & Nama
-                    const p1 = setDoc(doc(db, candidatesCollectionPath, 'paslon1'), { name: 'Nama Ketua & Nama Wakil 1', votes: 0, order: 1 });
-                    const p2 = setDoc(doc(db, candidatesCollectionPath, 'paslon2'), { name: 'Nama Ketua & Nama Wakil 2', votes: 0, order: 2 });
-                    const p3 = setDoc(doc(db, candidatesCollectionPath, 'paslon3'), { name: 'Nama Ketua & Nama Wakil 3', votes: 0, order: 3 });
-                    await Promise.all([p1, p2, p3]);
-                }
-                
-                // Mulai mendengarkan perubahan secara real-time
-                listenToVotes();
-            } catch (error) {
-                console.error("Gagal inisialisasi data:", error);
-            }
-        }
-
-        function listenToVotes() {
-            const colRef = collection(db, candidatesCollectionPath);
-            
+            // Kita langsung pakai onSnapshot. Ini mengatasi masalah "stuck loading" 
             onSnapshot(colRef, (snapshot) => {
+                
+                // SISTEM PEMBARUAN OTOMATIS (Aman dari reset suara)
+                // Memastikan 4 paslon dengan nama baru masuk ke database.
+                defaultPaslons.forEach(async (p) => {
+                    const existingDoc = snapshot.docs.find(d => d.id === p.id);
+                    if (!existingDoc) {
+                        // Jika paslon belum ada (misal paslon ke-4), buat baru
+                        await setDoc(doc(db, candidatesCollectionPath, p.id), { ...p, votes: 0 });
+                    } else {
+                        // Jika sudah ada, update saja nama dan fotonya agar sesuai (tidak mengubah votes)
+                        const data = existingDoc.data();
+                        if (data.name !== p.name || data.image !== p.image) {
+                            await updateDoc(doc(db, candidatesCollectionPath, p.id), { name: p.name, image: p.image });
+                        }
+                    }
+                });
+
+                if (snapshot.empty) return; // Tunggu data selesai dibuat
+                
                 let candidates = [];
                 snapshot.forEach(docSnap => {
                     candidates.push({ id: docSnap.id, ...docSnap.data() });
@@ -144,12 +158,21 @@
                 // Render ke layar
                 renderCandidates(candidates);
                 
-                // Sembunyikan loading screen setelah data pertama kali masuk
+                // Sembunyikan loading screen setelah data berhasil masuk
                 document.getElementById('loading-screen').classList.add('hidden');
                 document.getElementById('app-content').classList.remove('hidden');
                 document.getElementById('app-content').classList.add('flex');
             }, (error) => {
                 console.error("Error mendengarkan pembaruan:", error);
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.classList.remove('hidden');
+                loadingScreen.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm m-4">
+                        <p class="text-red-500 font-bold text-lg mb-2">Akses Database Ditolak ⚠️</p>
+                        <p class="text-slate-600 text-sm mb-4">Pastikan aturan <b>Firestore Database</b> Anda sudah diset ke "Start in test mode".</p>
+                        <code class="text-xs text-red-400 bg-red-50 p-2 rounded block text-left overflow-auto">${error.message}</code>
+                    </div>
+                `;
             });
         }
 
@@ -157,41 +180,38 @@
             const container = document.getElementById('candidates-container');
             container.innerHTML = ''; // Bersihkan container
             
-            candidates.forEach((paslon, index) => {
-                // Memberikan sedikit perbedaan warna pada avatar/ikon paslon
-                const colors = ['text-blue-400', 'text-blue-500', 'text-blue-600'];
-                const iconColor = colors[index % colors.length];
-
+            // Render maksimal 4 paslon teratas yang berurutan
+            candidates.slice(0, 4).forEach((paslon, index) => {
+                
                 const cardHTML = `
-                    <div class="glass-card rounded-3xl p-8 flex flex-col items-center relative overflow-hidden group">
+                    <div class="glass-card rounded-3xl p-6 flex flex-col items-center relative overflow-hidden group w-full">
                         
                         <!-- Dekorasi latar belakang (lingkaran transparan) -->
                         <div class="absolute -top-10 -right-10 w-32 h-32 bg-blue-100 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-500 z-0"></div>
                         
-                        <!-- Avatar Ikon Placeholder (Kotak Lebar) -->
-                        <div class="relative z-10 w-full h-56 bg-white rounded-2xl flex items-center justify-center mb-4 shadow-sm border-2 border-blue-50 overflow-hidden">
-                            <svg class="w-24 h-24 ${iconColor} opacity-70" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
-                            </svg>
+                        <!-- Avatar / Gambar Paslon -->
+                        <div class="relative z-10 w-full aspect-square bg-white rounded-2xl flex flex-col items-center justify-center mb-6 shadow-lg border-4 border-white overflow-hidden">
+                            <!-- object-contain agar seluruh gambar selalu muat tanpa terpotong -->
+                            <img src="${paslon.image}" alt="${paslon.name}" class="w-full h-full object-contain transform transition-transform duration-700 group-hover:scale-105 p-1">
                         </div>
                         
-                        <h2 class="relative z-10 text-xl md:text-2xl font-bold text-slate-700 mb-2 text-center leading-snug">${paslon.name}</h2>
+                        <h2 class="relative z-10 text-xl font-bold text-slate-800 mb-4 text-center leading-snug min-h-[3.5rem] flex items-center justify-center">${paslon.name}</h2>
                         
                         <!-- Jumlah Suara -->
-                        <div class="relative z-10 w-full bg-blue-50 rounded-2xl py-6 my-6 text-center border border-blue-100/50">
-                            <span class="text-xs font-semibold text-blue-400 uppercase tracking-widest block mb-1">Total Suara</span>
-                            <div class="number-transition text-7xl font-extrabold text-blue-900" id="vote-count-${paslon.id}">
-                                ${paslon.votes}
+                        <div class="relative z-10 w-full bg-blue-50 rounded-2xl py-5 mb-5 text-center border border-blue-100/50">
+                            <span class="text-[10px] font-bold text-blue-500 uppercase tracking-widest block mb-1">Total Suara</span>
+                            <div class="number-transition text-5xl xl:text-6xl font-extrabold text-blue-900" id="vote-count-${paslon.id}">
+                                ${paslon.votes || 0}
                             </div>
                         </div>
                         
                         <!-- Tombol Aksi (+ / -) Hanya untuk Mobile/Tablet -->
-                        <div class="relative z-10 flex w-full gap-4 mt-auto mobile-only-btn">
-                            <button onclick="updateVote('${paslon.id}', -1)" class="btn-press flex-1 bg-white border-2 border-blue-100 hover:border-red-200 hover:bg-red-50 text-slate-400 hover:text-red-500 font-bold py-3 px-4 rounded-xl flex items-center justify-center shadow-sm">
-                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M20 12H4"></path></svg>
+                        <div class="relative z-10 flex w-full gap-3 mt-auto mobile-only-btn">
+                            <button onclick="updateVote('${paslon.id}', -1)" class="btn-press bg-white border-2 border-blue-100 hover:border-red-200 hover:bg-red-50 text-slate-400 hover:text-red-500 font-bold py-2.5 px-4 rounded-xl flex items-center justify-center shadow-sm">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M20 12H4"></path></svg>
                             </button>
-                            <button onclick="updateVote('${paslon.id}', 1)" class="btn-press flex-[2] bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/30">
-                                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            <button onclick="updateVote('${paslon.id}', 1)" class="btn-press flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/30">
+                                <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                                 Tambah
                             </button>
                         </div>
