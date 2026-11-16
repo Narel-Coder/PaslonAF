@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Count Pemilos Real-time</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #BDBDBD;
+            min-height: 100vh;
+        }
+        
+        .paslon-card {
+            backdrop-filter: blur(12px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 12px rgba(255, 255, 255, 0.75), 0 0 24px rgba(255, 255, 255, 0.35);
+        }
+
+        .x-glow {
+            filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.85));
+        }
+
+        .number-transition {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .btn-press {
+            transition: transform 0.1s;
+        }
+        
+        .btn-press:active {
+            transform: scale(0.95);
+        }
+
+        @media (pointer: fine) {
+            .mobile-only-btn {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-white antialiased p-4 md:p-8 flex flex-col items-center justify-center">
+
+    <div id="loading-screen" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#BDBDBD]/95 backdrop-blur-sm">
+        <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-white mb-4"></div>
+        <p class="text-white font-semibold text-lg animate-pulse text-glow">Menghubungkan ke Server Real-time...</p>
+    </div>
+
+    <div id="app-content" class="w-full max-w-[1440px] mx-auto hidden flex-col items-center">
+        
+        <!-- Header -->
+        <header class="text-center mb-12 w-full flex flex-col items-center justify-center mt-6">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-blue-900 tracking-tight mb-2 bg-white/95 inline-block px-8 py-5 rounded-3xl shadow-xl backdrop-blur-md border-4 border-white">
+                PEMILU OSIS SMP AL-FATH BSD <span class="text-blue-600">2026</span>
+            </h1>
+        </header>
+
+        <!-- Grid 5 kolom untuk PC (4 Paslon + 1 Abstain) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 w-full" id="candidates-container">
+            <!-- Kartu Paslon & Abstain akan dirender di sini oleh JavaScript -->
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, collection, onSnapshot, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjB3g669HGbBdo3_PtBPRIHgQyWMcAYd4",
+            authDomain: "pemilos-af.firebaseapp.com",
+            projectId: "pemilos-af",
+            storageBucket: "pemilos-af.firebasestorage.app",
+            messagingSenderId: "253057739083",
+            appId: "1:253057739083:web:06038786e51065cc4720ce"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const candidatesCollectionPath = "candidates";
+
+        // =========================================================================
+        // PENGATURAN DATA PASLON & ABSTAIN
+        // =========================================================================
+        const defaultPaslons = [
+            { id: 'paslon1', label: 'PASLON 1', name: 'Azkia & Cumbita', order: 1, image: 'AzkiaCumbita.png', color: '#D81B60', isAbstain: false },
+            { id: 'paslon2', label: 'PASLON 2', name: 'Ayla & Naisya', order: 2, image: 'AylaNaisya.png', color: '#FBC02D', isAbstain: false },
+            { id: 'paslon3', label: 'PASLON 3', name: 'Athaya & Syathir', order: 3, image: 'AthayaSyathir.png', color: '#B71C1C', isAbstain: false },
+            { id: 'paslon4', label: 'PASLON 4', name: 'Fakhirah & Kenzie', order: 4, image: 'FakhirahMakaio.png', color: '#E88504', isAbstain: false },
+            { id: 'abstain', label: 'ABSTAIN', name: '', order: 5, image: '', color: '#424242', isAbstain: true }
+        ];
+
+        let hasSyncedMetadata = false;
+
+        async function initAuth() {
+            try {
+                const authPromise = signInAnonymously(auth);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Koneksi timeout. Cek internet Anda.")), 10000)
+                );
+                
+                await Promise.race([authPromise, timeoutPromise]);
+                initDataAndListen();
+            } catch (error) {
+                console.error("Gagal autentikasi:", error);
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm m-4">
+                        <p class="text-red-500 font-bold text-lg mb-2">Gagal Terhubung ⚠️</p>
+                        <p class="text-slate-600 text-sm mb-4">Pastikan fitur "Authentication > Anonymous" di Firebase sudah Anda aktifkan.</p>
+                        <code class="text-xs text-red-400 bg-red-50 p-2 rounded block text-left overflow-auto">${error.message}</code>
+                    </div>
+                `;
+            }
+        }
+
+        function initDataAndListen() {
+            const colRef = collection(db, candidatesCollectionPath);
+            
+            onSnapshot(colRef, async (snapshot) => {
+                if (!hasSyncedMetadata) {
+                    hasSyncedMetadata = true;
+                    for (const p of defaultPaslons) {
+                        const existingDoc = snapshot.docs.find(d => d.id === p.id);
+                        if (!existingDoc) {
+                            await setDoc(doc(db, candidatesCollectionPath, p.id), { ...p, votes: 0 });
+                        } else {
+                            const data = existingDoc.data();
+                            if (
+                                data.name !== p.name || 
+                                data.image !== p.image || 
+                                data.label !== p.label || 
+                                data.color !== p.color ||
+                                data.order !== p.order
+                            ) {
+                                await updateDoc(doc(db, candidatesCollectionPath, p.id), { 
+                                    name: p.name, 
+                                    image: p.image,
+                                    label: p.label,
+                                    color: p.color,
+                                    order: p.order,
+                                    isAbstain: p.isAbstain
+                                });
+                            }
+                        }
+                    }
+                }
+
+                const votesMap = {};
+                snapshot.forEach(docSnap => {
+                    votesMap[docSnap.id] = docSnap.data().votes || 0;
+                });
+
+                const mergedCandidates = defaultPaslons.map(p => ({
+                    ...p,
+                    votes: votesMap[p.id] !== undefined ? votesMap[p.id] : 0
+                }));
+
+                renderCandidates(mergedCandidates);
+                
+                document.getElementById('loading-screen').classList.add('hidden');
+                document.getElementById('app-content').classList.remove('hidden');
+                document.getElementById('app-content').classList.add('flex');
+            }, (error) => {
+                console.error("Error mendengarkan pembaruan:", error);
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.classList.remove('hidden');
+                loadingScreen.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-xl text-center max-w-sm m-4">
+                        <p class="text-red-500 font-bold text-lg mb-2">Akses Database Ditolak ⚠️</p>
+                        <p class="text-slate-600 text-sm mb-4">Pastikan aturan <b>Firestore Database</b> Anda sudah diset ke "Start in test mode".</p>
+                        <code class="text-xs text-red-400 bg-red-50 p-2 rounded block text-left overflow-auto">${error.message}</code>
+                    </div>
+                `;
+            });
+        }
+
+        function renderCandidates(candidates) {
+            const container = document.getElementById('candidates-container');
+            container.innerHTML = '';
+            
+            candidates.forEach((item) => {
+                const visualBoxContent = item.isAbstain
+                    ? `<div class="w-full h-full flex items-center justify-center bg-black/20">
+                           <svg class="w-32 h-32 text-white x-glow transform transition-transform duration-500 group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5" d="M6 18L18 6M6 6l12 12"></path>
+                           </svg>
+                       </div>`
+                    : `<img src="${item.image}" alt="${item.name}" class="w-full h-full object-contain transform transition-transform duration-700 group-hover:scale-105 p-1">`;
+
+                const cardHTML = `
+                    <div style="background-color: ${item.color};" class="paslon-card rounded-3xl p-5 flex flex-col items-center relative overflow-hidden group w-full border border-white/25">
+                        
+                        <!-- Dekorasi latar belakang -->
+                        <div class="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full group-hover:scale-110 transition-transform duration-500 z-0"></div>
+                        
+                        <!-- Kotak Gambar Paslon / Ikon X Abstain -->
+                        <div class="relative z-10 w-full aspect-square rounded-2xl flex flex-col items-center justify-center mb-5 overflow-hidden bg-black/15 border border-white/20">
+                            ${visualBoxContent}
+                        </div>
+                        
+                        <!-- Nomor Paslon & Nama Paslon -->
+                        <div class="relative z-10 text-center mb-4 min-h-[4.25rem] flex flex-col items-center justify-center">
+                            <span class="text-2xl xl:text-3xl font-black text-white text-glow tracking-wide uppercase leading-tight">
+                                ${item.label}
+                            </span>
+                            ${item.name ? `
+                                <h2 class="text-sm xl:text-base font-semibold text-white text-glow mt-1 leading-snug">
+                                    ${item.name}
+                                </h2>
+                            ` : ''}
+                        </div>
+                        
+                        <!-- Jumlah Suara -->
+                        <div class="relative z-10 w-full bg-black/20 rounded-2xl py-4 mb-4 text-center border border-white/20">
+                            <span class="text-[10px] font-bold text-white/90 text-glow uppercase tracking-widest block mb-1">Total Suara</span>
+                            <div class="number-transition text-5xl xl:text-6xl font-extrabold text-white text-glow" id="vote-count-${item.id}">
+                                ${item.votes}
+                            </div>
+                        </div>
+                        
+                        <!-- Tombol Aksi (+ / -) Hanya untuk Mobile/Tablet -->
+                        <div class="relative z-10 flex w-full gap-2.5 mt-auto mobile-only-btn">
+                            <button onclick="updateVote('${item.id}', -1)" class="btn-press bg-black/25 hover:bg-black/40 border border-white/30 text-white font-bold py-2.5 px-3.5 rounded-xl flex items-center justify-center shadow-sm">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M20 12H4"></path></svg>
+                            </button>
+                            <button onclick="updateVote('${item.id}', 1)" class="btn-press flex-1 bg-white/25 hover:bg-white/35 border border-white/40 text-white text-glow font-bold py-2.5 px-3 rounded-xl flex items-center justify-center shadow-md">
+                                <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                Tambah
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHTML;
+            });
+        }
+
+        window.updateVote = async (paslonId, changeValue) => {
+            if (!auth.currentUser) return;
+
+            const docRef = doc(db, candidatesCollectionPath, paslonId);
+            
+            try {
+                await updateDoc(docRef, {
+                    votes: increment(changeValue)
+                });
+                
+                const countEl = document.getElementById(`vote-count-${paslonId}`);
+                if (countEl) {
+                    countEl.style.transform = changeValue > 0 ? 'scale(1.1)' : 'scale(0.9)';
+                    setTimeout(() => {
+                        if (countEl) countEl.style.transform = 'scale(1)';
+                    }, 150);
+                }
+                
+            } catch (error) {
+                console.error("Gagal update suara:", error);
+                showNotification("Gagal mengubah suara. Coba lagi.");
+            }
+        };
+
+        function showNotification(message) {
+            const notif = document.createElement('div');
+            notif.className = "fixed bottom-5 right-5 bg-red-600 text-white px-6 py-3 rounded-xl shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 z-50";
+            notif.innerText = message;
+            document.body.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.classList.remove('translate-y-10', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                notif.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+
+        initAuth();
+    </script>
+</body>
+</html>
